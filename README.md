@@ -80,6 +80,7 @@ Each check times out after 15 seconds, so one slow or hanging CLI can't block th
 | `npm` | `npm whoami` | |
 | `docker` | credential helper `list` (registry → username only) | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
+| `tailscale` | `tailscale switch --list` (local only, works offline and while disconnected) + `tailscale status --json` for the connection state | `*` = current profile |
 | `aws` | `aws configure list-profiles`, `aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |

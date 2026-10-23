@@ -85,6 +85,7 @@ whoami-all --probe ngrok     # ดูหัวข้อ "ngrok" ด้านล�
 | `npm` | `npm whoami` | |
 | `docker` | คำสั่ง `list` ของ credential helper (ได้แค่ registry → username) | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
+| `tailscale` | `tailscale switch --list` (คุยกับ tailscaled ในเครื่องเท่านั้น ใช้ได้ทั้งตอน offline และตอนที่ยังไม่ได้เชื่อมต่อ) + `tailscale status --json` สำหรับสถานะการเชื่อมต่อ | `*` = profile ที่ใช้อยู่ |
 | `aws` | `aws configure list-profiles`, `aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |

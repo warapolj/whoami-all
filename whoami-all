@@ -19,7 +19,7 @@ NO_NETWORK=0
 PROBE=0
 ONLY=""
 
-ALL_TOOLS="gh git ssh-github wrangler npm docker kubectl aws gcloud az vercel netlify fly heroku railway doctl firebase ngrok"
+ALL_TOOLS="gh git ssh-github wrangler npm docker kubectl tailscale aws gcloud az vercel netlify fly heroku railway doctl firebase ngrok"
 
 for arg in "$@"; do
   case "$arg" in
@@ -154,6 +154,27 @@ check_kubectl() {
     emit ok "current: ${current:-none}  (all: $all)" "kubectl config use-context <name>"
   else
     emit none "" "(no contexts in ~/.kube/config)"
+  fi
+}
+
+check_tailscale() {
+  local ts=tailscale
+  # The Mac App Store build ships its CLI inside the app bundle instead of on PATH.
+  have tailscale || ts=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+  [ -x "$(command -v "$ts")" ] || { emit missing "" ""; return; }
+  local profiles state
+  # `switch --list` talks to the local tailscaled only, so it works offline and
+  # while disconnected. Columns: ID, Tailnet, Account; "*" marks the current one.
+  profiles=$(run "$ts" switch --list | awk 'NR>1 && NF>=3 {
+      cur = ($3 ~ /\*$/); acct=$3; sub(/\*$/, "", acct)
+      printf "%s%s%s (%s)", sep, $2, (cur ? "*" : ""), acct; sep=", " }')
+  state=$(run "$ts" status --json | sed -n 's/.*"BackendState"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  if [ -n "$profiles" ]; then
+    emit ok "$profiles  [${state:-unknown}]" "tailscale switch <tailnet>  |  add: tailscale login  |  connect: tailscale up"
+  elif [ -z "$state" ]; then
+    emit error "tailscaled is not running" ""
+  else
+    emit none "" "tailscale login"
   fi
 }
 

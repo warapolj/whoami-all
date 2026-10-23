@@ -88,6 +88,7 @@ whoami-all --probe ngrok     # 见下文 "ngrok"
 | `npm` | `npm whoami` | |
 | `docker` | credential helper 的 `list`（只有 registry → 用户名） | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
+| `tailscale` | `tailscale switch --list`（只访问本机 tailscaled，离线或未连接时也可用）+ `tailscale status --json` 获取连接状态 | `*` = 当前 profile |
 | `aws` | `aws configure list-profiles`、`aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |
