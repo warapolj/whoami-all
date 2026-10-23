@@ -8,7 +8,7 @@
 #   --json        machine-readable output (for the Raycast extension later)
 #   --no-network  skip checks that call a remote API (ssh, wrangler, aws, ...)
 #   --probe       also run checks that have side effects (ngrok: opens a
-#                 throwaway tunnel for a few seconds); results are cached
+#                 throwaway tunnel; ollama: starts a temporary local server)
 #   tool ...      only check these tools, e.g. `whoami-all gh wrangler`
 
 set -u
@@ -19,7 +19,7 @@ NO_NETWORK=0
 PROBE=0
 ONLY=""
 
-ALL_TOOLS="gh git ssh-github wrangler npm docker kubectl tailscale aws gcloud az vercel netlify fly heroku railway doctl firebase ngrok"
+ALL_TOOLS="gh git ssh-github wrangler npm docker kubectl tailscale aws gcloud az vercel netlify fly heroku railway doctl firebase claude codex gemini qwen ollama ai-keys ngrok"
 
 for arg in "$@"; do
   case "$arg" in
@@ -248,6 +248,119 @@ check_firebase() {
     emit ok "$accounts" "firebase login:use <email>  |  add: firebase login:add"
   else
     emit none "" "firebase login"
+  fi
+}
+
+# --- AI CLIs -------------------------------------------------------------------
+
+# Value of a top-level string field from JSON on stdin (flat objects only).
+json_field() { sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1; }
+
+check_claude() {
+  have claude || { emit missing "" ""; return; }
+  local out email
+  out=$(run claude auth status --json)
+  if printf '%s' "$out" | grep -q '"loggedIn"[[:space:]]*:[[:space:]]*true'; then
+    email=$(printf '%s' "$out" | json_field email)
+    emit ok "${email:-$(printf '%s' "$out" | json_field authMethod)} ($(printf '%s' "$out" | json_field orgName), $(printf '%s' "$out" | json_field subscriptionType))" \
+      "claude auth logout && claude auth login"
+  else
+    emit none "" "claude auth login"
+  fi
+}
+
+check_codex() {
+  have codex || { emit missing "" ""; return; }
+  local how
+  # Only keep "Logged in using ChatGPT / an API key". Anything after it
+  # (codex appends a masked key) is dropped.
+  how=$(run codex login status | grep -oE 'Logged in using [A-Za-z ]+' | head -1)
+  if [ -n "$how" ]; then
+    emit ok "${how#Logged in using }" "codex logout && codex login"
+  else
+    emit none "" "codex login"
+  fi
+}
+
+# Gemini CLI has no status command. The signed-in Google account is the
+# "active" field of google_accounts.json (an email, not a credential), and the
+# auth method is settings.json → selectedType. oauth_creds.json is never opened.
+check_gemini() {
+  have gemini || { emit missing "" ""; return; }
+  local dir="$HOME/.gemini" email type
+  [ -f "$dir/google_accounts.json" ] && email=$(json_field active <"$dir/google_accounts.json")
+  [ -f "$dir/settings.json" ] && type=$(json_field selectedType <"$dir/settings.json")
+  if [ -n "$email" ]; then
+    emit ok "$email (${type:-oauth-personal})" "gemini → /auth"
+  elif [ -n "$type" ]; then
+    emit ok "auth: $type" "gemini → /auth"
+  else
+    emit none "" "gemini (sign in on first run)"
+  fi
+}
+
+# Qwen Code: auth method from settings.json → selectedType. For qwen-oauth we can
+# only tell whether the OAuth file exists; it holds tokens, so it's never read.
+check_qwen() {
+  have qwen || { emit missing "" ""; return; }
+  local type=""
+  [ -f "$HOME/.qwen/settings.json" ] && type=$(json_field selectedType <"$HOME/.qwen/settings.json")
+  if [ "$type" = "qwen-oauth" ] && [ ! -f "$HOME/.qwen/oauth_creds.json" ]; then
+    emit none "" "qwen → /auth"
+  elif [ -n "$type" ]; then
+    emit ok "auth: $type" "qwen → /auth"
+  else
+    emit none "" "qwen → /auth"
+  fi
+}
+
+# Ollama's server exposes the ollama.com account at POST /api/me. If no server
+# is running, --probe starts a temporary one on a spare port and stops it.
+check_ollama() {
+  have ollama || { emit missing "" ""; return; }
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+  local host="${OLLAMA_HOST:-127.0.0.1:11434}" pid="" me name
+  case "$host" in http*) ;; *) host="http://$host" ;; esac
+  if ! curl -s -m 2 -o /dev/null "$host/api/version"; then
+    if [ "$PROBE" != 1 ]; then
+      emit error "ollama server not running (start Ollama, or: whoami-all --probe ollama)" ""
+      return
+    fi
+    host="http://127.0.0.1:11999"
+    OLLAMA_HOST=127.0.0.1:11999 ollama serve >/dev/null 2>&1 &
+    pid=$!
+    local _
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      curl -s -m 1 -o /dev/null "$host/api/version" && break
+      sleep 1
+    done
+  fi
+  me=$(curl -s -m 10 -X POST "$host/api/me")
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  name=$(printf '%s' "$me" | json_field name)
+  if [ -n "$name" ]; then
+    emit ok "$name <$(printf '%s' "$me" | json_field email)> (plan: $(printf '%s' "$me" | json_field plan))" "ollama signout && ollama signin"
+  else
+    emit none "" "ollama signin"
+  fi
+}
+
+# Many AI tools (DeepSeek, OpenRouter, aider, llm, ...) have no login of their
+# own and just read an API key from the environment. Report which of those
+# variables are set in the current shell: names only, never values.
+AI_KEY_VARS="ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY DEEPSEEK_API_KEY \
+MISTRAL_API_KEY GROQ_API_KEY OPENROUTER_API_KEY XAI_API_KEY DASHSCOPE_API_KEY MOONSHOT_API_KEY \
+TOGETHER_API_KEY FIREWORKS_API_KEY PERPLEXITY_API_KEY COHERE_API_KEY HF_TOKEN"
+
+check_ai_keys() {
+  local v set=""
+  for v in $AI_KEY_VARS; do
+    eval "[ -n \"\${$v:-}\" ]" && set="$set, $v"
+  done
+  if [ -n "$set" ]; then
+    emit ok "${set#, } set in this shell" "unset <VAR>  |  per project: .env or direnv"
+  else
+    emit ok "(none set in this shell)" "per project: .env or direnv"
   fi
 }
 

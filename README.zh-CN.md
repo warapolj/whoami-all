@@ -26,7 +26,7 @@ not installed: gcloud az netlify heroku railway doctl firebase
 ## 设计上就是安全的
 
 - 只运行各个 CLI **自带的** `whoami` / `status` / `list` 命令并显示结果。
-- **从不打印、存储或发送 token**。凭据始终保存在各个 CLI 原本存放的位置。
+- **从不打印、存储或发送 token**。凭据始终保存在各个 CLI 原本存放的位置。少数工具没有状态命令，只会从其设置文件中读取一个非机密字段（邮箱或认证方式），从不打开凭据文件。
 - 有副作用的检查只在你明确要求时才会执行（见 `--probe`）。
 - 整个工具就是一个易读的 Bash 脚本，运行前可以先[看一遍](./whoami-all)。
 
@@ -54,6 +54,7 @@ whoami-all gh wrangler       # 只检查指定的工具
 whoami-all --no-network      # 跳过需要调用远程 API 的检查（快速，可离线）
 whoami-all --json            # 机器可读的输出
 whoami-all --probe ngrok     # 见下文 "ngrok"
+whoami-all --probe ollama    # 没有 Ollama 服务在运行时，临时启动一个本地服务
 ```
 
 每项检查最多等待 15 秒，某个 CLI 变慢或卡住也不会拖住其他检查。
@@ -89,6 +90,12 @@ whoami-all --probe ngrok     # 见下文 "ngrok"
 | `docker` | credential helper 的 `list`（只有 registry → 用户名） | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
 | `tailscale` | `tailscale switch --list`（只访问本机 tailscaled，离线或未连接时也可用）+ `tailscale status --json` 获取连接状态 | `*` = 当前 profile |
+| `claude` (Claude Code) | `claude auth status --json` | |
+| `codex` (OpenAI Codex CLI) | `codex login status`（只保留 "ChatGPT" / "an API key"，打码的 key 会被丢弃） | |
+| `gemini` (Gemini CLI) | `~/.gemini/google_accounts.json` 中的 `active` 邮箱 + `settings.json` 中的认证方式（从不打开 `oauth_creds.json`） | |
+| `qwen` (Qwen Code) | `~/.qwen/settings.json` 中的认证方式 | |
+| `ollama` | 本机 Ollama 服务的 `POST /api/me`（没有服务在运行时，`--probe` 会临时启动一个） | |
+| `ai-keys` | 当前 shell 中设置了哪些 AI API key 变量，**只显示变量名**（`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`OPENROUTER_API_KEY` 等） | |
 | `aws` | `aws configure list-profiles`、`aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |
@@ -100,6 +107,10 @@ whoami-all --probe ngrok     # 见下文 "ngrok"
 | `doctl` | `doctl account get` | |
 | `firebase` | `firebase login:list` | |
 | `ngrok` | 见下文 | |
+
+### 没有登录机制的 AI 工具（DeepSeek、OpenRouter 等）
+
+DeepSeek 和许多 AI 服务商没有官方 CLI 登录。aider、`llm`、Continue 等工具只是从环境变量读取 API key。`ai-keys` 会告诉你当前 shell 里设置了哪些这类变量，让你知道工具会用到哪个 key。它只显示变量名，从不显示值。
 
 ### ngrok
 

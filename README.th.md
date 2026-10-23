@@ -26,7 +26,7 @@ not installed: gcloud az netlify heroku railway doctl firebase
 ## ปลอดภัยตั้งแต่การออกแบบ
 
 - รันแค่คำสั่ง `whoami` / `status` / `list` **ของ CLI นั้นๆ เอง** แล้วแสดงผล
-- **ไม่แสดง ไม่เก็บ และไม่ส่ง token ไปไหน** credential ยังอยู่ในที่ที่ CLI แต่ละตัวเก็บไว้
+- **ไม่แสดง ไม่เก็บ และไม่ส่ง token ไปไหน** credential ยังอยู่ในที่ที่ CLI แต่ละตัวเก็บไว้ บางเครื่องมือไม่มีคำสั่งเช็กสถานะ จึงอ่านแค่ค่าที่ไม่ใช่ความลับหนึ่งค่า (อีเมลหรือประเภทการล็อกอิน) จากไฟล์ settings และไม่เปิดไฟล์ credential เลย
 - การเช็กที่มีผลข้างเคียงจะทำก็ต่อเมื่อคุณสั่งเท่านั้น (ดู `--probe`)
 - เป็น Bash script ไฟล์เดียวที่อ่านเข้าใจง่าย [อ่านโค้ด](./whoami-all) ก่อนรันได้เลย
 
@@ -54,6 +54,7 @@ whoami-all gh wrangler       # เช็กเฉพาะตัวที่ร�
 whoami-all --no-network      # ข้ามตัวที่ต้องเรียก API ผ่านเน็ต (เร็ว ใช้ offline ได้)
 whoami-all --json            # output สำหรับให้โปรแกรมอื่นอ่าน
 whoami-all --probe ngrok     # ดูหัวข้อ "ngrok" ด้านล่าง
+whoami-all --probe ollama    # เปิด Ollama server ชั่วคราวในเครื่อง ถ้ายังไม่มีตัวไหนรันอยู่
 ```
 
 แต่ละการเช็กจะหมดเวลาใน 15 วินาที CLI ตัวไหนช้าหรือค้างจึงไม่ทำให้ตัวอื่นค้างตาม
@@ -86,6 +87,12 @@ whoami-all --probe ngrok     # ดูหัวข้อ "ngrok" ด้านล�
 | `docker` | คำสั่ง `list` ของ credential helper (ได้แค่ registry → username) | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
 | `tailscale` | `tailscale switch --list` (คุยกับ tailscaled ในเครื่องเท่านั้น ใช้ได้ทั้งตอน offline และตอนที่ยังไม่ได้เชื่อมต่อ) + `tailscale status --json` สำหรับสถานะการเชื่อมต่อ | `*` = profile ที่ใช้อยู่ |
+| `claude` (Claude Code) | `claude auth status --json` | |
+| `codex` (OpenAI Codex CLI) | `codex login status` (เก็บแค่คำว่า "ChatGPT" / "an API key" ส่วน key ที่ถูกปิดบังจะถูกตัดทิ้ง) | |
+| `gemini` (Gemini CLI) | อีเมลในช่อง `active` ของ `~/.gemini/google_accounts.json` + ประเภทการล็อกอินใน `settings.json` (ไม่เปิด `oauth_creds.json`) | |
+| `qwen` (Qwen Code) | ประเภทการล็อกอินใน `~/.qwen/settings.json` | |
+| `ollama` | `POST /api/me` ของ Ollama server ในเครื่อง (ถ้าไม่มี server รันอยู่ `--probe` จะเปิด server ชั่วคราวให้) | |
+| `ai-keys` | AI API key ตัวไหนถูกตั้งไว้ใน shell บ้าง **แสดงแค่ชื่อตัวแปร** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, ...) | |
 | `aws` | `aws configure list-profiles`, `aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |
@@ -97,6 +104,10 @@ whoami-all --probe ngrok     # ดูหัวข้อ "ngrok" ด้านล�
 | `doctl` | `doctl account get` | |
 | `firebase` | `firebase login:list` | |
 | `ngrok` | ดูด้านล่าง | |
+
+### AI ที่ไม่มีระบบล็อกอิน (DeepSeek, OpenRouter, ...)
+
+DeepSeek และผู้ให้บริการ AI อีกหลายเจ้าไม่มี CLI ทางการสำหรับล็อกอิน เครื่องมืออย่าง aider, `llm` หรือ Continue แค่อ่าน API key จาก environment variable `ai-keys` จะบอกว่าตัวแปรไหนถูกตั้งไว้ใน shell ปัจจุบันบ้าง ทำให้รู้ว่าเครื่องมือจะใช้ key ตัวไหน โดยแสดงแค่ชื่อตัวแปร ไม่แสดงค่า
 
 ### ngrok
 

@@ -26,7 +26,7 @@ If you juggle personal, work and client accounts, it's easy to forget what you'r
 ## Safe by design
 
 - It only runs each CLI's **own** `whoami` / `status` / `list` command and shows the result.
-- It **never prints, stores or sends tokens**. Your credentials stay where each CLI keeps them.
+- It **never prints, stores or sends tokens**. Your credentials stay where each CLI keeps them. A few tools have no status command, so it reads one non-secret field (an email or an auth type) from their settings file, and never opens their credential files.
 - Checks that have side effects run only when you ask for them (see `--probe`).
 - It's a single, readable Bash script. [Read it](./whoami-all) before you run it.
 
@@ -54,6 +54,7 @@ whoami-all gh wrangler       # only these tools
 whoami-all --no-network      # skip checks that call a remote API (fast, offline)
 whoami-all --json            # machine-readable output
 whoami-all --probe ngrok     # see "ngrok" below
+whoami-all --probe ollama    # start a temporary local Ollama server if none is running
 ```
 
 Each check times out after 15 seconds, so one slow or hanging CLI can't block the rest.
@@ -81,6 +82,12 @@ Each check times out after 15 seconds, so one slow or hanging CLI can't block th
 | `docker` | credential helper `list` (registry → username only) | |
 | `kubectl` | `kubectl config current-context` / `get-contexts` | `current:` |
 | `tailscale` | `tailscale switch --list` (local only, works offline and while disconnected) + `tailscale status --json` for the connection state | `*` = current profile |
+| `claude` (Claude Code) | `claude auth status --json` | |
+| `codex` (OpenAI Codex CLI) | `codex login status` (only "ChatGPT" / "an API key" is kept; the masked key is dropped) | |
+| `gemini` (Gemini CLI) | `active` email in `~/.gemini/google_accounts.json` + auth type in `settings.json` (`oauth_creds.json` is never opened) | |
+| `qwen` (Qwen Code) | auth type in `~/.qwen/settings.json` | |
+| `ollama` | `POST /api/me` on the local Ollama server (`--probe` starts a temporary server if none is running) | |
+| `ai-keys` | which AI API key variables are set in your shell, **names only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, ...) | |
 | `aws` | `aws configure list-profiles`, `aws sts get-caller-identity` | `profile=` |
 | `gcloud` | `gcloud auth list` | `*` |
 | `az` | `az account show` | |
@@ -92,6 +99,10 @@ Each check times out after 15 seconds, so one slow or hanging CLI can't block th
 | `doctl` | `doctl account get` | |
 | `firebase` | `firebase login:list` | |
 | `ngrok` | see below | |
+
+### AI tools without a login (DeepSeek, OpenRouter, ...)
+
+DeepSeek and many other AI providers have no official CLI login. Tools like aider, `llm` or Continue just read an API key from an environment variable. `ai-keys` tells you which of those variables are set in the current shell, so you know which key a tool will pick up. It prints the variable names only, never the values.
 
 ### ngrok
 

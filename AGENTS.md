@@ -14,8 +14,14 @@ Guidance for AI coding agents (and humans) working on this repo.
 
 ## Hard rules
 
-1. **Never print, store, log or send credentials.** A check may only call the CLI's own whoami/status/list command, or test whether a config key exists (for example `grep -q authtoken`). Never `cat` a credential file. Never print a token, even masked. Never add a `--show-token`-style flag.
-2. **Checks with side effects stay opt-in.** Anything that opens a connection beyond a normal API call, starts a process that stays running, or changes state (like the ngrok probe, which opens a tunnel) must only run under `--probe`, and should cache its result.
+1. **Never print, store, log or send credentials.** A check may only:
+   - call the CLI's own whoami/status/list command (or its local API, like Ollama's `/api/me`)
+   - test whether a config key or file exists (for example `grep -q authtoken`)
+   - read one named, non-secret field (an email, an auth type) from a settings file with `json_field` or `sed -n`
+   - check whether an environment variable is set, and report only its name
+
+   Never open credential files (`oauth_creds.json`, `credentials`, `*.pem`, ...). Never `cat` a config file. Never print a token, even masked, and strip masked keys out of a CLI's output (see `check_codex`). Never add a `--show-token`-style flag.
+2. **Checks with side effects stay opt-in.** Anything that opens a connection beyond a normal API call, starts a process that stays running, or changes state (like the ngrok probe, which opens a tunnel, or the Ollama probe, which starts a local server) must only run under `--probe`, and should cache its result.
 3. **Read-only.** `whoami-all` never switches, logs in or logs out. It only prints the command the user can run (the third `emit` field).
 4. **Each check prints exactly one line**: `emit <status> <account> <switch-hint>`, where status is `ok | none | missing | skip | error`. Fields are joined with the ASCII unit separator (`$SEP`), not tabs, because `read` collapses repeated tabs and would shift an empty field.
 5. **Respect `--no-network`.** If a check needs the network, `emit skip "" ""` when `NO_NETWORK=1`.
