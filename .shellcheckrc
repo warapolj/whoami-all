@@ -1,2 +1,3 @@
 # check_* functions are called indirectly via "check_$tool".
-disable=SC2329
+# SC2329 on shellcheck >= 0.10.1, SC2317 on older versions.
+disable=SC2329,SC2317
