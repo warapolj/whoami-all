@@ -1,0 +1,2 @@
+# check_* functions are called indirectly via "check_$tool".
+disable=SC2329

@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+# whoami-all — show which account every CLI on this machine is logged in as.
+#
+# It only runs each CLI's own whoami/status command. It never prints, stores
+# or sends tokens.
+#
+# Usage: whoami-all [--json] [--no-network] [--probe] [tool ...]
+#   --json        machine-readable output (for the Raycast extension later)
+#   --no-network  skip checks that call a remote API (ssh, wrangler, aws, ...)
+#   --probe       also run checks that have side effects (ngrok: opens a
+#                 throwaway tunnel for a few seconds); results are cached
+#   tool ...      only check these tools, e.g. `whoami-all gh wrangler`
+
+set -u
+
+TIMEOUT=15
+JSON=0
+NO_NETWORK=0
+PROBE=0
+ONLY=""
+
+ALL_TOOLS="gh git ssh-github wrangler npm docker kubectl aws gcloud az vercel netlify fly heroku railway doctl firebase ngrok"
+
+for arg in "$@"; do
+  case "$arg" in
+    --json) JSON=1 ;;
+    --no-network) NO_NETWORK=1 ;;
+    --probe) PROBE=1 ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) echo "unknown option: $arg" >&2; exit 2 ;;
+    *) ONLY="$ONLY $arg" ;;
+  esac
+done
+TOOLS=${ONLY:-$ALL_TOOLS}
+
+# Raycast and launchd don't load the login shell PATH.
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin"
+export WRANGLER_SEND_METRICS=false NPM_CONFIG_UPDATE_NOTIFIER=false
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Run a command with a time limit (macOS has no `timeout`).
+run() { perl -e 'alarm shift; exec @ARGV or exit 127' "$TIMEOUT" "$@" 2>&1; }
+
+# Every check prints exactly one line: status<US>account<US>how to switch
+#   status: ok | none (installed, not logged in) | missing (not installed) | skip | error
+# Fields are split on the ASCII unit separator, not tab: `read` collapses
+# repeated tabs, which would shift an empty account into the next field.
+SEP=$'\037'
+emit() { printf '%s%s%s%s%s\n' "$1" "$SEP" "$2" "$SEP" "$3"; }
+
+# --- checks ------------------------------------------------------------------
+
+check_gh() {
+  have gh || { emit missing "" ""; return; }
+  local out accounts
+  out=$(run gh auth status)
+  # "Logged in to github.com account NAME (keyring)" followed by "Active account: true|false"
+  accounts=$(printf '%s\n' "$out" | awk '
+    /Logged in to .* account / { for (i=1;i<=NF;i++) { if ($i=="to") host=$(i+1); if ($i=="account") name=$(i+1) } next }
+    /Active account: true/ && name { printf "%s%s*(%s)", sep, name, host; sep=", "; name="" }
+    /Active account: false/ && name { printf "%s%s(%s)", sep, name, host; sep=", "; name="" }')
+  if [ -n "$accounts" ]; then
+    emit ok "$accounts" "gh auth switch  |  add: gh auth login"
+  else
+    emit none "" "gh auth login"
+  fi
+}
+
+check_git() {
+  have git || { emit missing "" ""; return; }
+  local name email
+  name=$(git config --global user.name)
+  email=$(git config --global user.email)
+  if [ -n "$email" ]; then
+    emit ok "$name <$email> (global)" "git config --global user.email …  |  per folder: includeIf in ~/.gitconfig"
+  else
+    emit none "" "git config --global user.email you@example.com"
+  fi
+}
+
+check_ssh_github() {
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+  local out user
+  out=$(run ssh -T -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new git@github.com)
+  user=$(printf '%s\n' "$out" | sed -n 's/^Hi \([^!]*\)!.*/\1/p' | head -1)
+  if [ -n "$user" ]; then
+    emit ok "$user" "IdentityFile for Host github.com in ~/.ssh/config"
+  else
+    emit none "" "ssh-keygen -t ed25519 + add key on github.com"
+  fi
+}
+
+check_wrangler() {
+  local cfg="$HOME/Library/Preferences/.wrangler/config/default.toml"
+  [ -f "$HOME/.wrangler/config/default.toml" ] && cfg="$HOME/.wrangler/config/default.toml"
+  local cmd
+  if have wrangler; then cmd="wrangler"
+  elif [ -f "$cfg" ] && have npx; then cmd="npx --yes wrangler"
+  elif have npx; then emit none "" "npx wrangler login"; return
+  else emit missing "" ""; return; fi
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+
+  local out email accounts
+  out=$(run $cmd whoami)
+  email=$(printf '%s\n' "$out" | sed -n 's/.*associated with the email \([^ ]*\)\..*/\1/p' | head -1)
+  # Account table rows: │ Account Name │ Account ID │
+  accounts=$(printf '%s\n' "$out" | awk -F'│' 'NF>=4 && $2 !~ /Account Name/ {
+      gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3)
+      printf "%s%s [%s…]", sep, $2, substr($3,1,8); sep=", " }')
+  if [ -n "$email" ]; then
+    emit ok "$email → ${accounts:-?}" "per project: account_id in wrangler.toml  |  other user: wrangler logout && wrangler login"
+  elif printf '%s' "$out" | grep -qi "not authenticated"; then
+    emit none "" "wrangler login"
+  else
+    emit error "$(printf '%s\n' "$out" | tail -1)" ""
+  fi
+}
+
+check_npm() {
+  have npm || { emit missing "" ""; return; }
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+  local out
+  if out=$(run npm whoami); then
+    emit ok "$(printf '%s\n' "$out" | tail -1) ($(npm config get registry))" "npm logout && npm login"
+  else
+    emit none "" "npm login"
+  fi
+}
+
+check_docker() {
+  have docker || { emit missing "" ""; return; }
+  local cfg="$HOME/.docker/config.json" store accounts
+  [ -f "$cfg" ] || { emit none "" "docker login"; return; }
+  store=$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
+  if [ -n "$store" ] && have "docker-credential-$store"; then
+    # `list` returns {"registry":"username",...} — usernames only, no secrets.
+    accounts=$(run "docker-credential-$store" list | tr '{},' '\n' |
+      sed -n 's/^ *"\([^"]*\)" *: *"\([^"]*\)".*/\2@\1/p' | paste -sd ',' - | sed 's/,/, /g')
+  fi
+  if [ -n "$accounts" ]; then
+    emit ok "$accounts" "docker logout <registry> && docker login <registry>"
+  else
+    emit none "" "docker login"
+  fi
+}
+
+check_kubectl() {
+  have kubectl || { emit missing "" ""; return; }
+  local current all
+  current=$(kubectl config current-context 2>/dev/null)
+  all=$(kubectl config get-contexts -o name 2>/dev/null | paste -sd ',' - | sed 's/,/, /g')
+  if [ -n "$all" ]; then
+    emit ok "current: ${current:-none}  (all: $all)" "kubectl config use-context <name>"
+  else
+    emit none "" "(no contexts in ~/.kube/config)"
+  fi
+}
+
+check_aws() {
+  have aws || { emit missing "" ""; return; }
+  local profiles arn
+  profiles=$(aws configure list-profiles 2>/dev/null | paste -sd ',' - | sed 's/,/, /g')
+  [ -z "$profiles" ] && { emit none "" "aws configure  |  aws configure sso"; return; }
+  if [ "$NO_NETWORK" = 1 ]; then
+    emit ok "profile=${AWS_PROFILE:-default}  (all: $profiles)" "export AWS_PROFILE=<name>"
+    return
+  fi
+  arn=$(run aws sts get-caller-identity --query Arn --output text) || arn="(session expired? aws sso login)"
+  emit ok "$arn  profile=${AWS_PROFILE:-default}  (all: $profiles)" "export AWS_PROFILE=<name>  |  aws sso login"
+}
+
+check_gcloud() {
+  have gcloud || { emit missing "" ""; return; }
+  local accounts
+  accounts=$(gcloud auth list --format='value(account,status)' 2>/dev/null |
+    awk '{ printf "%s%s%s", sep, $1, ($2=="*" ? "*" : ""); sep=", " }')
+  if [ -n "$accounts" ]; then
+    emit ok "$accounts (project: $(gcloud config get-value project 2>/dev/null))" "gcloud config set account <a>  |  gcloud config configurations activate <c>"
+  else
+    emit none "" "gcloud auth login"
+  fi
+}
+
+check_az() {
+  have az || { emit missing "" ""; return; }
+  local out
+  if out=$(az account show --query '[user.name, name]' -o tsv 2>/dev/null) && [ -n "$out" ]; then
+    emit ok "$(printf '%s' "$out" | paste -sd ' ' - | sed 's/ / · /')" "az account set --subscription <id>"
+  else
+    emit none "" "az login"
+  fi
+}
+
+# For CLIs whose whoami prints the username as the last line of output.
+check_simple() { # tool hint-when-logged-in login-cmd whoami-cmd...
+  local tool=$1 hint=$2 login=$3; shift 3
+  have "$tool" || { emit missing "" ""; return; }
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+  local out
+  if out=$(run "$@") && [ -n "$out" ]; then
+    emit ok "$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -1 | sed 's/^> //')" "$hint"
+  else
+    emit none "" "$login"
+  fi
+}
+
+check_vercel()  { check_simple vercel  "vercel switch (team)  |  vercel logout && vercel login" "vercel login" vercel whoami; }
+check_fly()     { check_simple fly     "fly auth logout && fly auth login" "fly auth login" fly auth whoami; }
+check_heroku()  { check_simple heroku  "heroku logout && heroku login" "heroku login" heroku auth:whoami; }
+check_railway() { check_simple railway "railway logout && railway login" "railway login" railway whoami; }
+check_doctl()   { check_simple doctl   "doctl auth switch --context <name>" "doctl auth init" doctl account get --format Email --no-header; }
+
+check_netlify() {
+  have netlify || { emit missing "" ""; return; }
+  [ "$NO_NETWORK" = 1 ] && { emit skip "" ""; return; }
+  local email
+  email=$(run netlify status | sed -n 's/.*Email:[[:space:]]*//p' | head -1)
+  if [ -n "$email" ]; then emit ok "$email" "netlify switch"; else emit none "" "netlify login"; fi
+}
+
+check_firebase() {
+  have firebase || { emit missing "" ""; return; }
+  local accounts
+  accounts=$(run firebase login:list | grep -oE '[[:alnum:]._%+-]+@[[:alnum:].-]+' | sort -u | paste -sd ',' - | sed 's/,/, /g')
+  if [ -n "$accounts" ]; then
+    emit ok "$accounts" "firebase login:use <email>  |  add: firebase login:add"
+  else
+    emit none "" "firebase login"
+  fi
+}
+
+# ngrok has no whoami, and neither its log nor its local API (:4040) includes
+# the account. The name only appears in the interactive console, so --probe
+# starts a throwaway tunnel inside a pty, reads the "Account" line and kills it.
+# The result is cached because each probe briefly opens a public URL, and the
+# free plan allows a single agent session at a time.
+probe_ngrok_account() {
+  have python3 || return 1
+  python3 -I -c '
+import os, pty, re, select, signal, struct, fcntl, termios, time, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ["TERM"] = "xterm-256color"
+    os.execvp("ngrok", ["ngrok", "http", "9999"])
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+buf, found, end = b"", None, time.time() + 10
+while time.time() < end and not found:
+    if select.select([fd], [], [], 0.5)[0]:
+        try: buf += os.read(fd, 65536)
+        except OSError: break
+    text = re.sub(r"\x1b(\[[0-9;?]*[A-Za-z]|[()][A-Z0-9]|[=>])", " ", buf.decode("utf-8", "replace"))
+    m = re.search(r"Account\s+(.+?\(Plan: [^)]+\))", text)
+    found = m and m.group(1)
+os.kill(pid, signal.SIGTERM)
+os.waitpid(pid, 0)
+print(found or "")
+sys.exit(0 if found else 1)
+'
+}
+
+check_ngrok() {
+  have ngrok || { emit missing "" ""; return; }
+  local cfg has_token=0 cache="${XDG_CACHE_HOME:-$HOME/.cache}/whoami-all/ngrok-account" account
+  for cfg in "$HOME/Library/Application Support/ngrok/ngrok.yml" "$HOME/.config/ngrok/ngrok.yml" "$HOME/.ngrok2/ngrok.yml"; do
+    [ -f "$cfg" ] && grep -q 'authtoken' "$cfg" && has_token=1
+  done
+  [ "$has_token" = 1 ] || { rm -f "$cache"; emit none "" "ngrok config add-authtoken <token>"; return; }
+
+  if [ "$PROBE" = 1 ] && [ "$NO_NETWORK" = 0 ]; then
+    if curl -s -m 1 -o /dev/null http://127.0.0.1:4040/api/status; then
+      emit error "an ngrok agent is already running; stop it and retry --probe" ""
+      return
+    fi
+    if account=$(probe_ngrok_account); then
+      mkdir -p "$(dirname "$cache")"
+      printf '%s\n%s\n' "$account" "$(date +%Y-%m-%d)" >"$cache"
+      emit ok "$account" "ngrok config add-authtoken <token>"
+    else
+      emit error "probe failed (couldn't read the Account line)" ""
+    fi
+  elif [ -f "$cache" ]; then
+    emit ok "$(sed -n 1p "$cache")  [cached $(sed -n 2p "$cache"); refresh: whoami-all --probe ngrok]" "ngrok config add-authtoken <token>"
+  else
+    emit ok "authtoken set (account name: whoami-all --probe ngrok)" "ngrok config add-authtoken <token>"
+  fi
+}
+
+# --- run all checks in parallel, print in a fixed order ---------------------
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+for t in $TOOLS; do
+  fn="check_$(printf '%s' "$t" | tr '-' '_')"
+  if ! type "$fn" >/dev/null 2>&1; then
+    emit error "unknown tool" "known: $ALL_TOOLS" >"$tmp/$t"
+    continue
+  fi
+  ( "$fn" | head -1 >"$tmp/$t" ) &
+done
+wait
+
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r\t')"; }
+
+if [ "$JSON" = 1 ]; then
+  printf '['
+  sep=""
+  for t in $TOOLS; do
+    IFS=$SEP read -r status account hint <"$tmp/$t"
+    printf '%s{"tool":%s,"status":%s,"account":%s,"switch":%s}' "$sep" \
+      "$(json_str "$t")" "$(json_str "${status:-error}")" "$(json_str "${account:-}")" "$(json_str "${hint:-}")"
+    sep=","
+  done
+  printf ']\n'
+  exit 0
+fi
+
+if [ -t 1 ]; then
+  C_OK=$'\033[32m' C_NONE=$'\033[33m' C_DIM=$'\033[2m' C_ERR=$'\033[31m' C_OFF=$'\033[0m'
+else
+  C_OK="" C_NONE="" C_DIM="" C_ERR="" C_OFF=""
+fi
+
+missing=""
+for t in $TOOLS; do
+  IFS=$SEP read -r status account hint <"$tmp/$t"
+  case "${status:-error}" in
+    ok)      printf '%s✓%s %-11s %s\n' "$C_OK" "$C_OFF" "$t" "$account"
+             [ -n "$hint" ] && printf '  %-11s %s↳ %s%s\n' "" "$C_DIM" "$hint" "$C_OFF" ;;
+    none)    printf '%s○%s %-11s %snot logged in%s  %s↳ %s%s\n' "$C_NONE" "$C_OFF" "$t" "$C_NONE" "$C_OFF" "$C_DIM" "$hint" "$C_OFF" ;;
+    skip)    printf '%s-%s %-11s %sskipped (--no-network)%s\n' "$C_DIM" "$C_OFF" "$t" "$C_DIM" "$C_OFF" ;;
+    missing) missing="$missing $t" ;;
+    *)       printf '%s✗%s %-11s %s%s%s\n' "$C_ERR" "$C_OFF" "$t" "$C_ERR" "${account:-check failed}" "$C_OFF" ;;
+  esac
+done
+[ -n "$missing" ] && printf '\n%snot installed:%s%s\n' "$C_DIM" "$missing" "$C_OFF"
+exit 0

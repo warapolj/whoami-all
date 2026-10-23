@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck whoami-all
+
+  smoke:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check (macOS runs the stock /bin/bash 3.2)
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then /bin/bash -n whoami-all; else bash -n whoami-all; fi
+      - name: Table output
+        run: ./whoami-all --no-network
+      - name: JSON output is valid
+        run: ./whoami-all --no-network --json | python3 -m json.tool
+      - name: Unknown tool reports an error instead of crashing
+        run: ./whoami-all --json bogus | grep -q '"status":"error"'
