@@ -137,7 +137,7 @@ check_mytool() { check_simple mytool "mytool logout && mytool login" "mytool log
 ## 路线图
 
 1. **脚本**（本仓库）：在一个地方查看所有账号 ✅
-2. **Raycast 扩展**：基于 `whoami-all --json` 的列表和菜单栏命令，可一键运行切换或登录命令
+2. **Raycast 扩展**（[`raycast/`](./raycast)）：基于 `whoami-all --json` 的列表和菜单栏命令，可一键切换账号或运行登录命令 ✅（尚未上架 Raycast Store）
 3. **工作区**：每个项目目录下放一个 `.accounts.toml`，声明每个 CLI 应使用的账号，并提供 `--check` 模式，当前登录不匹配时发出警告（例如在 git `pre-push` hook 中使用）
 
 ## 许可证

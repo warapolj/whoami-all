@@ -133,7 +133,7 @@ check_mytool() { check_simple mytool "mytool logout && mytool login" "mytool log
 ## Roadmap
 
 1. **Script** (repo นี้): ดูทุกบัญชีได้ในที่เดียว ✅
-2. **Raycast extension**: หน้ารายการและเมนูบาร์ที่ใช้ `whoami-all --json` พร้อมปุ่มรันคำสั่งสลับบัญชีหรือล็อกอิน
+2. **Raycast extension** ([`raycast/`](./raycast)): หน้ารายการและเมนูบาร์ที่ใช้ `whoami-all --json` พร้อมปุ่มสลับบัญชีหรือรันคำสั่งล็อกอิน ✅ (ยังไม่ได้ขึ้น Raycast Store)
 3. **Workspaces**: ไฟล์ `.accounts.toml` ในแต่ละโฟลเดอร์โปรเจกต์ ระบุว่า CLI แต่ละตัวควรใช้บัญชีไหน และมีโหมด `--check` ไว้เตือนเมื่อบัญชีที่ล็อกอินอยู่ไม่ตรง เช่น เรียกจาก git `pre-push` hook
 
 ## License

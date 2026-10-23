@@ -1,0 +1,101 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "whoami-all",
+  "title": "CLI Accounts",
+  "description": "See which account every CLI on your Mac is logged in as (GitHub, Cloudflare, AWS, Tailscale, Claude Code, ...) and switch with one keystroke. Never touches tokens.",
+  "icon": "icon.png",
+  "author": "warapolj",
+  "categories": ["Developer Tools", "System"],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "who-am-i",
+      "title": "Who Am I",
+      "subtitle": "CLI Accounts",
+      "description": "List the account every CLI is logged in as, with actions to switch or log in.",
+      "mode": "view"
+    },
+    {
+      "name": "menu-bar",
+      "title": "CLI Accounts in Menu Bar",
+      "subtitle": "CLI Accounts",
+      "description": "Show your current account for one CLI in the menu bar, with every other login one click away.",
+      "mode": "menu-bar",
+      "interval": "15m",
+      "preferences": [
+        {
+          "name": "menuBarTool",
+          "type": "dropdown",
+          "required": false,
+          "default": "gh",
+          "title": "Menu Bar Title",
+          "description": "Which CLI's account to show in the menu bar.",
+          "data": [
+            { "title": "GitHub CLI (gh)", "value": "gh" },
+            { "title": "Git email", "value": "git" },
+            { "title": "Cloudflare (wrangler)", "value": "wrangler" },
+            { "title": "AWS", "value": "aws" },
+            { "title": "Google Cloud", "value": "gcloud" },
+            { "title": "Kubernetes context", "value": "kubectl" },
+            { "title": "Tailscale", "value": "tailscale" },
+            { "title": "Vercel", "value": "vercel" },
+            { "title": "Claude Code", "value": "claude" },
+            { "title": "Icon only", "value": "" }
+          ]
+        }
+      ]
+    }
+  ],
+  "preferences": [
+    {
+      "name": "scriptPath",
+      "type": "textfield",
+      "required": false,
+      "title": "whoami-all Script",
+      "description": "Path to your own whoami-all script. Leave empty to use the copy bundled with the extension.",
+      "placeholder": "~/.local/bin/whoami-all"
+    },
+    {
+      "name": "terminal",
+      "type": "dropdown",
+      "required": false,
+      "default": "Terminal",
+      "title": "Terminal",
+      "description": "Where login commands run (they usually open a browser).",
+      "data": [
+        { "title": "Terminal", "value": "Terminal" },
+        { "title": "iTerm", "value": "iTerm" }
+      ]
+    },
+    {
+      "name": "showMissing",
+      "type": "checkbox",
+      "required": false,
+      "default": false,
+      "title": "Not Installed",
+      "label": "Show tools that aren't installed",
+      "description": "List CLIs that aren't installed on this Mac in their own section."
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.9.0",
+    "@raycast/utils": "^2.3.3"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "sync-script": "cp ../whoami-all assets/whoami-all && chmod +x assets/whoami-all",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}

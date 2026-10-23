@@ -10,7 +10,11 @@ Guidance for AI coding agents (and humans) working on this repo.
 
 - `whoami-all`: the whole tool. Sections, in order: option parsing → helpers (`have`, `run`, `emit`) → one `check_<tool>` function per tool → parallel runner → output (table or `--json`).
 - `.shellcheckrc`: lint config. `check_*` functions are called indirectly, so SC2329 is disabled.
-- `.github/workflows/ci.yml`: shellcheck plus smoke tests on macOS and Linux.
+- `.github/workflows/ci.yml`: shellcheck, smoke tests on macOS and Linux, and a Raycast build.
+- `raycast/`: the Raycast extension ("CLI Accounts"). It runs a **bundled copy** of the script at `raycast/assets/whoami-all` with `--json` and parses the output in `raycast/src/lib/whoami.ts`.
+  - After changing `whoami-all`, run `npm run sync-script` in `raycast/` (CI fails if the copy differs).
+  - If you change the wording of a check's `account` or `switch` field, check `parseHints`, `switchTargets` and `shortAccount` in `raycast/src/lib/whoami.ts`, which parse them.
+  - Unlike the script, the extension may switch accounts, but only with the CLI's own non-interactive switcher (`gh auth switch`, `kubectl config use-context`, ...). Logins that need a browser open in a terminal.
 
 ## Hard rules
 
@@ -54,6 +58,7 @@ bash -n whoami-all
 ./whoami-all --no-network                 # must exit 0 and print no tokens
 ./whoami-all --json | python3 -m json.tool  # must be valid JSON
 ./whoami-all <your-tool>                  # the tool you changed, logged in and logged out
+(cd raycast && npm run sync-script && npx ray lint && npx ray build -e dist)   # if you touched the extension or the output format
 ```
 
 Test both states (logged in / not logged in) for the tool you changed. If you can't test a CLI locally, say so in the PR.

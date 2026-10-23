@@ -123,7 +123,7 @@ See [AGENTS.md](./AGENTS.md) for conventions and how to test.
 ## Roadmap
 
 1. **Script** (this repo): see every account in one place ✅
-2. **Raycast extension**: a list and a menu bar command built on `whoami-all --json`, with actions that run the switch/login command
+2. **Raycast extension** ([`raycast/`](./raycast)): a list and a menu bar command built on `whoami-all --json`, with actions that switch accounts or run the login command ✅ (not in the Raycast Store yet)
 3. **Workspaces**: an `.accounts.toml` per project folder that says which account each CLI should use, plus a `--check` mode that warns (for example, from a git `pre-push` hook) when the current login doesn't match
 
 ## License

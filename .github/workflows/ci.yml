@@ -29,3 +29,18 @@ jobs:
         run: ./whoami-all --no-network --json | python3 -m json.tool
       - name: Unknown tool reports an error instead of crashing
         run: ./whoami-all --json bogus | grep -q '"status":"error"'
+
+  raycast:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: raycast
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bundled script matches ../whoami-all
+        run: cmp ../whoami-all assets/whoami-all
+      - run: npm ci
+      - run: npx ray build -e dist
